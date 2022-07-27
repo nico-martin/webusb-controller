@@ -1,6 +1,6 @@
 {
   "name": "@nico-martin/webusb-controller",
-  "version": "0.0.6",
+  "version": "0.1.0",
   "description": "",
   "main": "public/WebUSBController.js",
   "types": "public/WebUSBController.d.ts",
@@ -19,6 +19,10 @@
   "files": [
     "public"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git@github.com:nico-martin/webusb-controller.git"
+  },
   "keywords": [
     "typescript",
     "npm",
