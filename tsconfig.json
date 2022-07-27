@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "noEmit": false,
+    "target": "es5",
+    "module": "commonjs",
+    "rootDir": "./src",
+    "moduleResolution": "node",
+    "outDir": "public",
+    "declaration": true,
+    "strictNullChecks": false,
+    "lib": [
+      "es2017",
+      "es7",
+      "es6",
+      "dom"
+    ],
+    "esModuleInterop": true
+  },
+  "exclude": [
+    "node_modules",
+    "public"
+  ]
+}
