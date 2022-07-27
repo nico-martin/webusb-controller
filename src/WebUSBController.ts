@@ -4,11 +4,11 @@ let INSTANCES = 0;
 
 export default class WebUSBController {
   device: USBDevice;
-  interfaceNumber: number = 0;
-  endpointIn: number = 0;
-  endpointOut: number = 0;
-  receiveEventKey: string = null;
-  connectEventKey: string = null;
+  private interfaceNumber: number = 0;
+  private endpointIn: number = 0;
+  private endpointOut: number = 0;
+  private receiveEventKey: string = null;
+  private connectEventKey: string = null;
 
   constructor() {
     INSTANCES++;
@@ -40,7 +40,7 @@ export default class WebUSBController {
       );
   }
 
-  readLoop = () => {
+  private readLoop = () => {
     this.device.transferIn(this.endpointIn, 64).then(
       (result) => {
         document.dispatchEvent(
