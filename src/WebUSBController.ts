@@ -1,60 +1,44 @@
-const RECEIVE_EVENT_KEY = 'nm-webusbcontroller-receive-emitter';
-const CONNECT_EVENT_KEY = 'nm-webusbcontroller-connect-emitter';
-let INSTANCES = 0;
+import EventBus from './eventBus/EventBus';
 
-export default class WebUSBController {
-  device: USBDevice;
+export type EventsDefinitions = {
+  deviceConnect: USBDevice;
+  dataReceived: DataView;
+};
+
+class WebUSBController {
+  private device: USBDevice;
   private interfaceNumber: number = 0;
   private endpointIn: number = 0;
   private endpointOut: number = 0;
-  private receiveEventKey: string = null;
-  private connectEventKey: string = null;
+  private readonly showLog: boolean = false;
+  private readonly showError: boolean = false;
+  private eventBus = new EventBus<EventsDefinitions>('webusb-controller');
 
-  constructor() {
-    INSTANCES++;
-    this.receiveEventKey = RECEIVE_EVENT_KEY + '-' + INSTANCES;
-    this.connectEventKey = CONNECT_EVENT_KEY + '-' + INSTANCES;
+  constructor(error: boolean = false, log: boolean = false) {
     this.device = null;
+    this.showLog = log;
+    this.showError = error;
 
+    // when the device is disconnected (plug is pulled)
     navigator.usb.addEventListener('disconnect', (ev) => {
       if (this.device === ev.device) {
         this.device = null;
-        document.dispatchEvent(
-          new CustomEvent(this.connectEventKey, {
-            detail: null,
-          })
-        );
+        this.eventBus.publish('deviceConnect', null);
       }
     });
 
-    navigator.usb.addEventListener(
-      'connect',
-      async (ev) => await this.connectDevice(ev.device)
-    );
+    // when the device is connected (plug is plugged in)
+    navigator.usb.addEventListener('connect', async (ev) => {
+      await this.connectDevice(ev.device);
+    });
 
-    navigator.usb
-      .getDevices()
-      .then(
-        async (devices) =>
-          devices.length && (await this.connectDevice(devices[0]))
-      );
+    // check if devices are already authorized
+    navigator.usb.getDevices().then(async (devices) => {
+      devices.length && (await this.connectDevice(devices[0]));
+    });
   }
 
-  private readLoop = () => {
-    this.device.transferIn(this.endpointIn, 64).then(
-      (result) => {
-        document.dispatchEvent(
-          new CustomEvent(this.receiveEventKey, {
-            detail: result.data,
-          })
-        );
-        this.readLoop();
-      },
-      (error) => console.log('onReceiveError', error)
-    );
-  };
-
-  private async connectDevice(device: USBDevice) {
+  private connectDevice = async (device: USBDevice): Promise<void> => {
     await device.open();
     await device.selectConfiguration(1);
     device.configuration.interfaces.map((element) =>
@@ -77,66 +61,59 @@ export default class WebUSBController {
     await device.selectAlternateInterface(this.interfaceNumber, 0);
     await device.claimInterface(this.interfaceNumber);
 
-    device
-      .controlTransferOut({
-        requestType: 'class',
-        recipient: 'interface',
-        request: 0x22,
-        value: 0x01,
-        index: this.interfaceNumber,
-      })
-      .then(() => {
-        this.readLoop();
-      });
-
-    document.dispatchEvent(
-      new CustomEvent(this.connectEventKey, {
-        detail: this.device,
-      })
-    );
-
-    document.dispatchEvent(
-      new CustomEvent(this.connectEventKey, {
-        detail: device,
-      })
-    );
-
     this.device = device;
-  }
+    this.eventBus.publish('deviceConnect', this.device);
 
-  async connect(options?: USBDeviceRequestOptions) {
+    // tell the device that we are ready to receive data
+    await this.device.controlTransferOut({
+      requestType: 'class',
+      recipient: 'interface',
+      request: 0x22,
+      value: 0x01,
+      index: this.interfaceNumber,
+    });
+    this.readLoop().catch((e) => this.error(e));
+  };
+
+  private readLoop = async (): Promise<void> => {
+    this.log('start transferIn');
+    const result = await this.device.transferIn(this.endpointIn, 64);
+    this.log('transferIn', result);
+    result.data && this.eventBus.publish('dataReceived', result.data);
+    this.readLoop().catch((e) => this.error(e));
+  };
+
+  public disconnect = async (): Promise<void> => {
+    this.device && (await this.device.close());
+  };
+
+  public connect = async (options?: USBDeviceRequestOptions): Promise<void> => {
     const device = await navigator.usb.requestDevice(options);
     await this.connectDevice(device);
-    return device;
-  }
+  };
 
-  async disconnect() {
-    return await this.device.close();
-  }
+  public onReceive = (callback: (data: DataView) => void) => {
+    this.eventBus.subscribe('dataReceived', (data: DataView) => callback(data));
+  };
 
-  async send(data: BufferSource) {
+  public send = async (data: BufferSource): Promise<USBOutTransferResult> => {
     if (this.device) {
       return await this.device.transferOut(this.endpointOut, data);
     } else {
-      console.error('ERROR: device not connected');
+      this.error('device not connected');
     }
-  }
+  };
 
-  onReceive(callback: (data: DataView) => void) {
-    document.addEventListener(
-      this.receiveEventKey,
-      ({ detail }: CustomEvent<DataView>) => {
-        callback(detail);
-      }
+  public onDeviceConnect = (callback: (device: USBDevice) => void) => {
+    this.eventBus.subscribe('deviceConnect', (device: USBDevice) =>
+      callback(device)
     );
-  }
+  };
 
-  onDeviceConnect(callback: (device: USBDevice) => void) {
-    document.addEventListener(
-      this.connectEventKey,
-      ({ detail }: CustomEvent<USBDevice>) => {
-        callback(detail);
-      }
-    );
-  }
+  private log = (...e) =>
+    this.showLog ? console.log('WebUSBController:', ...e) : {};
+  private error = (...e) =>
+    this.showError ? console.error('WebUSBController:', ...e) : {};
 }
+
+export default WebUSBController;
